@@ -1,0 +1,472 @@
+/***************************************************************
+*PROGRAMMER:  ALEX DANILLUSHKIN
+*Z-ID:        Z1809166
+*CLASS:       CSCI480-02
+*DUE DATE:    04/24/2019
+*ASSIGNMENT:  7
+*
+*PURPOSE:     THE PURPOSE OF THIS ASSIGNMENT WAS TO CREATE A
+*			  WORKING SIMULATION OF FAT 12
+****************************************************************/
+
+//....................INCLUDE STATEMENTS.........................
+#include <iostream>
+#include <list>
+#include <fstream>
+#include <math.h>
+#include <iomanip>
+#include "assign7.h"
+
+using namespace std;
+
+/*.........................MAIN............................
+* Use: The main function. Calls all neccesary methods to
+*	   start simulation
+*
+* Parameters: None
+*
+* Returns: 0 if everything ran properly
+..........................................................*/
+int main(){
+
+ Entry myDir;
+ myDir.name = ".";
+ myDir.size = clusterSize;
+
+ Entry parentDir;
+ parentDir.name = "..";
+ parentDir.size = 0;
+
+ add(myDir);
+ add(parentDir);
+
+ cout << "Beginning of the FAT simulation" << endl;
+
+ fileReader();
+ print();
+ printFAT();
+}
+
+//........................FUNCTIONS............................
+
+
+
+/*...........................ADD...............................
+* Use: To add an entry to the directory
+*
+* Parameters: 1. An Entry
+*
+* Returns: Void
+..............................................................*/
+void add(Entry &newEntry){
+
+ dir.push_back(newEntry);
+ newEntry.initCluster = createInitCluster(newEntry.size);
+
+}
+
+
+/*..........................REMOVE..............................
+* Use: To Remove an entry to the directory
+*
+* Parameters: 1. A string which is the entry name
+*
+* Returns: Void
+..............................................................*/
+void remove(string inName){
+
+ for(entryIT = dir.begin(); entryIT != dir.end(); ++entryIT){
+	if(entryIT->name.compare(inName) == 0){
+		dir.erase(entryIT);
+		break;
+        }
+ }
+
+}
+
+
+/*.......................FILEREADER.............................
+* Use: To read the file that was given. It handles the cases
+*	   by reading the first character then going through the 
+*	   else if's
+*
+* Parameters: none
+*
+* Returns: Void
+..............................................................*/
+void fileReader(){
+
+ string fName = "/home/turing/t90hch1/csci480/Assign7/data7.txt";
+ ifstream inputFile;
+ string action;
+ string inName;
+ string newName;
+ string inSize;
+ int    printCounter = 0;
+ Entry* newEntry = new Entry;
+
+ inputFile.open(fName);
+ if(inputFile.fail()){
+   cerr << "Cannot open file" << endl;
+   exit(-1);
+ }
+
+ else{ //we can read the file
+   inputFile >> action;//initalize action character
+
+   while(action.compare("?") != 0){//while we are not at the end
+
+   if(printCounter%5 == 0){
+   	print();
+   	printFAT();
+   }
+
+	//CASE C..................................
+	if(action.compare("C") == 0){
+			cout << "Transaction: Copy a file" << endl;
+	        inputFile >> inName;
+	        inputFile >> newName;
+
+		if(searchList(inName) && !searchList(newName)){
+			newEntry->name = newName;
+
+			for(entryIT = dir.begin(); entryIT != dir.end(); ++entryIT){
+				if(entryIT->name.compare(inName)){
+					newEntry->size = entryIT->size;
+					break;
+				}
+			}
+			add(*newEntry);
+			cout << "Successfully copied an existing file, " << inName;
+			cout << " to " << newName << endl;
+		}
+		else if(!searchList(inName)){
+			cout << inName << " could not be found. Cannot copy" << endl;
+		     }
+		else
+			cout << newName << " was found. Cannot copy" << endl;
+	}
+
+	//CASE D..................................
+	else if(action.compare("D") == 0){
+		cout << "Transaction: Delete a file" << endl;
+
+		inputFile >> inName;
+		if(searchList(inName)){//if entry is in the list
+			deallocate(inName);//remove fat memory
+			remove(inName);//remove it from dir
+			if(needResize()){//check if we need to resize dir
+				reallocate(*dir.begin());
+			}
+			cout << "Successfully deleted a file, " << inName << endl;
+		}
+		else
+			cout << "Could not find entry " << inName << endl;
+	}
+
+	//CASE N..................................
+	else if(action.compare("N") == 0){
+		cout << "Transaction: Add a new file " << endl;
+
+		inputFile >> inName;
+		inputFile >> inSize;
+
+	        newEntry->name = inName;
+		newEntry->size = stoi(inSize);
+		if( !searchList(newEntry->name)  )
+			add(*newEntry);
+		else{
+			cerr << newEntry->name << " not found in list" << endl;
+			exit(-1);
+		}
+		cout << "Successfully added a new file, " << newEntry->name << ", size " << newEntry->size << endl;
+	}
+
+	//CASE M..................................
+	else if(action.compare("M") == 0){
+		cout << "Transaction: Modifiy a file";
+
+		inputFile >> inName;
+		inputFile >> inSize;
+
+		if(searchList(inName)){
+			for(entryIT = dir.begin(); entryIT != dir.end(); ++entryIT){
+				if(entryIT->name.compare(inName) == 0){
+					entryIT->size = stoi(inSize);
+					reallocate(*entryIT);
+					cout << "Successfuly modified a file, " << inName << endl;
+					break;
+				}
+			}
+		}
+		else
+			cerr << inName << " could not be found. Cannot modify" << endl;
+	}
+
+
+	//CASE R..................................
+	else if(action.compare("R") == 0){
+		cout << "Transaction: Rename a file" << endl;
+		inputFile >> inName;
+		inputFile >> newName;
+
+		if(searchList(inName) && !searchList(newName)){
+			for(entryIT = dir.begin(); entryIT != dir.end(); ++entryIT){
+				if(entryIT->name.compare(inName) == 0){
+					entryIT->name = newName;
+					cout << "Successfully changed the file name " << inName << "to" << entryIT->name << endl;
+				}
+			}
+		}
+		else if(!searchList(inName))
+			cerr << inName << " does not exist. Cannot change file name" << endl;
+		else
+			cerr << newName << " already exists. Cannot change file name" << endl;
+
+	}
+	else{
+		cout << "Cannot read action char" << endl;
+		exit(-1);
+	}
+
+	printCounter++;
+  }//end of while
+
+  delete(newEntry);//Delete pointer
+ }
+}
+
+/*.....................CREATEINITCLUSTER......................
+* Use: The purpose of this function is to set the initial
+*      cluster for an entry in the fat, but then also allocate
+*      the rest of the memory
+*
+* Parameters: 1. An int so we know how much memory to allocate
+*
+* Returns: starting cluster for entry
+.............................................................*/
+int createInitCluster(int size){
+
+ if(size == 0){
+  return -1;
+ }
+
+ int cluster;
+ //else size>0
+ for(cluster = 0; cluster < 4096; cluster++){
+  if(fat[cluster] == 0)//find first available cluster
+	break;
+ }
+
+ //allocating clusters
+ int lastCluster = cluster;
+ cluster++;
+
+ while(size != 0){//keep going until all memory is allocated
+  if(fat[cluster] == 0){
+    fat[lastCluster] = cluster;//pervious cluster points to next cluster index
+    lastCluster = cluster;//pervious is now current
+
+    if(size > clusterSize){
+    	size -= clusterSize;
+    }
+    else{//size =< 512
+	fat[cluster] = -1;
+	size = 0;
+    }
+  }
+  cluster++;
+
+ }
+
+ if(needResize()){//do we need to allocate directory?
+	entryIT = dir.begin();
+	reallocate(*entryIT);
+ }
+
+ return cluster;
+}
+
+/*........................FINDCLUSTERS........................
+* Use: The purpose of this function is to return a vector of
+*	   ints(clusters) that the file has its memory allocated to
+*
+* Parameters: 1. An entry
+*
+* Returns: vector of ints(clusters)
+.............................................................*/
+vector<int> findClusters(Entry myEntry){
+
+  vector<int> vectorArray;
+  int nextCluster = 0;
+  int curCluster = myEntry.initCluster;
+  int count = 1;
+
+  if(myEntry->initCluster == -1){
+	
+  }
+
+  while(fat[curCluster] != -1){
+   nextCluster = fat[curCluster];
+   vectorArray.push_back(curCluster);
+   count++;
+
+   curCluster = nextCluster;
+  }
+
+  vectorArray.push_back(curCluster);
+
+  return vectorArray;
+}
+
+/*.........................NEEDRESIZE..........................
+* Use: This method checks whether or not the directory holding
+*      the files needs to be resized.
+*
+* Parameters: none
+*
+* Returns: boolean
+.............................................................*/
+bool needResize(){
+
+ int validEntrys = 0;
+ entryIT = dir.begin();//We do this to initialize to second entry and not count "."
+ for(++entryIT; entryIT != dir.end(); ++entryIT){
+   if(entryIT->size > 0)
+	validEntrys++;
+ }
+
+ int newSize = (int) (clusterSize * ceil((double)validEntrys/(double)clusterBlock));
+
+ if( newSize > (dir.begin()->size) || newSize < (dir.begin()->size) ){
+	dir.begin()->size = newSize;
+	return true;
+ }
+ return false;
+}
+
+/*.........................SEARCHLIST..........................
+* Use: This method checks whether or not the filename exists in
+*	   the directory
+*
+* Parameters: A string that is the name of the file
+*
+* Returns: boolean
+.............................................................*/
+bool searchList(string entry){
+ for(entryIT = dir.begin(); entryIT != dir.end(); ++entryIT){
+	if(entryIT->name.compare(entry) == 0){//if we have match
+		return true;
+	}
+ }
+
+ return false;
+
+}
+
+
+/*.........................REALLOCATE..........................
+* Use: The use of this method is to reallocate the memory of a 
+*      file. To do this, it deallocates fat then calls
+*      createInitCluster for the particular entry to reallocate
+*
+* Parameters: An entry
+*
+* Returns: void
+.............................................................*/
+void reallocate(Entry &myEntry){
+
+ deallocate(myEntry.name);
+ myEntry.initCluster = createInitCluster(myEntry.size);
+ cout << myEntry.initCluster << endl;
+
+}
+
+/*.........................DEALLOCATE..........................
+* Use: The use of this method is to set fat clusters associated 
+*	   the file to 0. Does not remove the file from the list
+*
+* Parameters: A string that is the entry name
+*
+* Returns: void
+.............................................................*/
+void deallocate(string entry){
+ //find entry to deallocate
+ for(entryIT = dir.begin(); entryIT != dir.end(); ++entryIT){
+   if(entryIT->name == entry)
+	break;
+ }
+
+
+ int curCluster = entryIT->initCluster;
+ int nextCluster = 0;
+ while(fat[curCluster] != -1){ //while not last cluster
+   nextCluster = fat[curCluster];
+   fat[curCluster] = 0;
+   curCluster = nextCluster;
+ }
+
+ fat[curCluster] = 0; //last cluster set to 0
+ entryIT->initCluster = -1; //reset initial cluster to default
+
+}
+
+/*...........................PRINT.............................
+* Use: prints the file directory
+*
+* Parameters: void
+*
+* Returns: void
+.............................................................*/
+void print(){
+ cout << "Directory Listing" << endl;
+ vector<int> myClusters;
+ vector<int>::iterator it;
+ bool extraEndl = false;
+
+ for(entryIT = dir.begin(); entryIT != dir.end(); ++entryIT){
+	cout << "File name: " << entryIT->name;
+	cout << setw(10) << "File Size" << setw(6) << entryIT->size << endl;
+	cout << "Cluster(s) in use: "<< setw(7);
+
+	myClusters = findClusters(*entryIT);
+	int count = 1;
+	for(it = myClusters.begin(); it != myClusters.end(); ++it){
+		extraEndl = true;
+		cout << *it << setw(4);
+		count++;
+		if( (count % 12) == 0){
+			cout << endl;
+			extraEndl = false;
+		}
+	}
+	if(extraEndl){
+	cout << endl;
+	}
+	
+ }
+ 
+}
+
+/*..........................printFAT...........................
+* Use: Prints the FAT table
+*
+* Parameters: void
+*
+* Returns: void
+.............................................................*/
+void printFAT(){
+ cout << "Contents of the File Allocation Table" << endl;
+
+ int blockCount = 0;
+ for(int i = 0; i < 240; i++ ){
+  cout << setfill(' ') << setw(6) << fat[i] << " ";
+  if(i%clusterBlock == 0){
+    cout << endl;
+    cout << "#" << setfill('0') << setw(3) << blockCount;
+    cout << "-" << setfill('0') << setw(3) << (blockCount + 11);
+    blockCount = blockCount + 12;
+  }
+ }
+}
+
